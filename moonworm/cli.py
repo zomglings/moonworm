@@ -450,6 +450,18 @@ def generate_argument_parser() -> argparse.ArgumentParser:
     )
     find_deployment_parser.set_defaults(func=handle_find_deployment)
 
+    generate_interface_parser = subcommands.add_parser(
+        "generate-interface",
+        description="This command generates a Solidity interface for a given ABI",
+    )
+    generate_interface_parser.set_defaults(func=lambda _: print("rofl"))
+
+    generate_controller_parser = subcommands.add_parser(
+        "generate-controller",
+        description="This command generates an EIP2535 facet contract that allows specific Terminus token holders to control a target contract",
+    )
+    generate_controller_parser.set_defaults(func=lambda _: print("lol"))
+
     return parser
 
 
