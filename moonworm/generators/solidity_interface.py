@@ -15,7 +15,7 @@ INTERFACE_TEMPLATE_FILEPATH = os.path.realpath(
 
 
 def generate_interface(
-    name: str, abi: List[Dict[str, Any]], pragma_version: str = "^0.8.9"
+    interface_name: str, abi: List[Dict[str, Any]], pragma_version: str = "^0.8.9"
 ) -> str:
     interface_body_components: List[str] = []
     for item in abi:
@@ -49,8 +49,16 @@ def generate_interface(
 
             inputs: List[str] = []
             for arg in item["inputs"]:
+                input_location = " "
+                if (
+                    arg["type"] == "string"
+                    or arg["type"] == "bytes"
+                    or arg["type"][-2:] == "[]"
+                ):
+                    input_location = " memory "
+
                 # TODO(zomglings): Should we be using "type" or "internalType"? Check against Dark Forest ABI.
-                input_component = f"{arg['type']}{arg['name']}"
+                input_component = f"{arg['type']}{input_location}{arg['name']}"
                 inputs.append(input_component)
 
             outputs: List[str] = []
@@ -58,11 +66,23 @@ def generate_interface(
                 name = ""
                 if arg.get("name"):
                     name = f" {arg['name']}"
+
+                output_location = ""
+                if (
+                    arg["type"] == "string"
+                    or arg["type"] == "bytes"
+                    or arg["type"][-2:] == "[]"
+                ):
+                    output_location = " memory"
                 # TODO(zomglings): Should we be using "type" or "internalType"? Check against Dark Forest ABI.
-                output_component = f"{arg['type']}{name}"
+                output_component = f"{arg['type']}{name}{output_location}"
                 outputs.append(output_component)
 
-            body_component = f"function {item['name']}({', '.join(inputs)}) external {mutability}returns ({', '.join(outputs)});"
+            returns_string = ""
+            if outputs:
+                returns_string = f"returns ({', '.join(outputs)})"
+
+            body_component = f"function {item['name']}({', '.join(inputs)}) external {mutability}{returns_string};"
             interface_body_components.append(body_component)
 
     interface_body = textwrap.indent("\n\n".join(interface_body_components), "\t")
@@ -73,7 +93,7 @@ def generate_interface(
     return interface_template.format(
         moonworm_version=MOONWORM_VERSION,
         pragma_version=pragma_version,
-        interface_name=name,
+        interface_name=interface_name,
         interface_body=interface_body,
     )
 
