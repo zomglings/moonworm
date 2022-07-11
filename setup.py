@@ -22,11 +22,7 @@ setup(
         "web3[tester] >=5.27.0",
     ],
     extras_require={
-        "dev": [
-            "isort",
-            "mypy",
-            "wheel",
-        ],
+        "dev": ["isort", "mypy", "wheel", "py-solc-x"],
         "distribute": ["setuptools", "twine", "wheel"],
     },
     description="moonworm: Generate a command line interface to any Ethereum smart contract",
