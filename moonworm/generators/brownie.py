@@ -1,3 +1,9 @@
+"""
+Generates [`brownie`](https://github.com/eth-brownie/brownie)-compatible bindings to Ethereum smart contracts from their ABIs.
+
+The entrypoint to code generation is [`generate_brownie_interface`][moonworm.generators.brownie.generate_brownie_interface].
+"""
+
 import copy
 import logging
 import os
@@ -12,12 +18,17 @@ from .basic import format_code, function_spec, get_constructor, make_annotation
 BROWNIE_INTERFACE_TEMPLATE_PATH = os.path.join(
     os.path.dirname(__file__), "brownie_contract.py.template"
 )
+BROWNIE_INTERFACE_PROD_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__), "brownie_contract_prod.py.template"
+)
 try:
     with open(BROWNIE_INTERFACE_TEMPLATE_PATH, "r") as ifp:
         BROWNIE_INTERFACE_TEMPLATE = ifp.read()
+    with open(BROWNIE_INTERFACE_PROD_TEMPLATE_PATH, "r") as ifp:
+        BROWNIE_INTERFACE_PROD_TEMPLATE = ifp.read()
 except Exception as e:
     logging.warn(
-        f"WARNING: Could not load cli template from {BROWNIE_INTERFACE_TEMPLATE_PATH}:"
+        f"WARNING: Could not load cli template from ({BROWNIE_INTERFACE_TEMPLATE_PATH})/({BROWNIE_INTERFACE_PROD_TEMPLATE_PATH}):"
     )
     logging.warn(e)
 
@@ -785,6 +796,13 @@ def generate_cli_generator(
                         value=cst.parse_expression("bytes_argument_type"),
                     ),
                 )
+            elif param["type"] == "tuple":
+                call_args.append(
+                    cst.Arg(
+                        keyword=cst.Name(value="type"),
+                        value=cst.parse_expression("eval"),
+                    ),
+                )
 
             add_argument_call = cst.Call(
                 func=cst.Attribute(
@@ -853,6 +871,17 @@ def generate_brownie_cli(
 ) -> List[cst.FunctionDef]:
     """
     Generates an argparse CLI to a brownie smart contract using the generated smart contract interface.
+
+    ## Inputs
+
+    1. `abi`: The ABI to the smart contract. This is expected to be the Python representation of a JSON
+    list that conforms to the [Solidity ABI specification](https://docs.soliditylang.org/en/v0.8.16/abi-spec.html#json).
+
+    2. `contract_name`: Name for the smart contract
+
+    ## Outputs
+
+    Concrete syntax tree representation of the generated code.
     """
     get_transaction_config_function = generate_get_transaction_config()
     add_default_arguments_function = generate_add_default_arguments()
@@ -880,8 +909,43 @@ def generate_brownie_cli(
 
 
 def generate_brownie_interface(
-    abi: List[Dict[str, Any]], contract_name: str, cli: bool = True, format: bool = True
+    abi: List[Dict[str, Any]],
+    contract_build: Dict[str, Any],
+    contract_name: str,
+    relative_path: str,
+    cli: bool = True,
+    format: bool = True,
+    prod: bool = False,
 ) -> str:
+    """
+    Generates Python code which allows you to interact with a smart contract with a given ABI, build data, and a given name.
+
+    The generated code uses the [`brownie`](https://github.com/eth-brownie/brownie) tool to interact with
+    the blockchain.
+
+    ## Inputs
+
+    1. `abi`: The ABI to the smart contract. This is expected to be the Python representation of a JSON
+    list that conforms to the [Solidity ABI specification](https://docs.soliditylang.org/en/v0.8.16/abi-spec.html#json).
+
+    2. `contract_build`: `brownie` build information for the contract (e.g. its bytecode).
+
+    3. `contract_name`: Name for the smart contract
+
+    4. `relative_path`: Path to brownie project directory (relative to target path for the generated code).
+
+    5. `cli`: Set to True if a CLI should be generated in addition to a Python class.
+
+    6. `format`: If True, uses [`black`](https://github.com/psf/black) to format the generated code before
+    returning it.
+
+    7. `prod`: If True, creates a self-contained file. Generated code will not require reference to an
+    existing brownie project at its runtime.
+
+
+    ## Outputs
+    The generated code as a string.
+    """
     contract_class = generate_brownie_contract_class(abi, contract_name)
     module_body = [contract_class]
 
@@ -890,11 +954,23 @@ def generate_brownie_interface(
         module_body.extend(contract_cli_functions)
 
     contract_body = cst.Module(body=module_body).code
-
-    content = BROWNIE_INTERFACE_TEMPLATE.format(
-        contract_body=contract_body,
-        moonworm_version=MOONWORM_VERSION,
-    )
+    if prod:
+        content = BROWNIE_INTERFACE_PROD_TEMPLATE.format(
+            contract_abi=abi,
+            contract_build={
+                "bytecode": contract_build["bytecode"],
+                "abi": contract_build["abi"],
+                "contractName": contract_build["contractName"],
+            },
+            contract_body=contract_body,
+            moonworm_version=MOONWORM_VERSION,
+        )
+    else:
+        content = BROWNIE_INTERFACE_TEMPLATE.format(
+            contract_body=contract_body,
+            moonworm_version=MOONWORM_VERSION,
+            relative_path=relative_path,
+        )
 
     if format:
         content = format_code(content)

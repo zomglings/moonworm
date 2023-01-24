@@ -3,20 +3,23 @@ from typing import Any, Dict, List, Optional, Union
 
 from eth_typing.evm import ChecksumAddress
 from hexbytes.main import HexBytes
-from moonstreamdb.db import yield_db_session_ctx
-from moonstreamdb.models import (
-    EthereumLabel,
-    EthereumTransaction,
-    PolygonLabel,
-    PolygonTransaction,
-    XDaiTransaction,
-)
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.base import NO_ARG
 from web3 import Web3
 
 from .ethereum_state_provider import EthereumStateProvider
-from .networks import MODELS, Network
+from .networks import (
+    MODELS,
+    EthereumLabel,
+    EthereumTransaction,
+    MumbaiLabel,
+    MumbaiTransaction,
+    PolygonLabel,
+    PolygonTransaction,
+    XDaiTransaction,
+    yield_db_session_ctx,
+)
+from .utils import Network
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,7 +81,9 @@ class MoonstreamEthereumStateProvider(EthereumStateProvider):
 
     @staticmethod
     def _transform_to_w3_tx(
-        tx_raw: Union[EthereumTransaction, PolygonTransaction, XDaiTransaction],
+        tx_raw: Union[
+            EthereumTransaction, MumbaiTransaction, PolygonTransaction, XDaiTransaction
+        ],
     ) -> Dict[str, Any]:
         tx = {
             "blockNumber": tx_raw.block_number,

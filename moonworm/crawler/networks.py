@@ -1,31 +1,42 @@
-from enum import Enum
 from typing import Dict
 
-from moonstreamdb.models import (
-    Base,
-    EthereumBlock,
-    EthereumLabel,
-    EthereumTransaction,
-    PolygonBlock,
-    PolygonLabel,
-    PolygonTransaction,
-    XDaiBlock,
-    XDaiLabel,
-    XDaiTransaction,
-)
+try:
+    from moonstreamdb.db import yield_db_session_ctx
+    from moonstreamdb.models import (
+        Base,
+        EthereumBlock,
+        EthereumLabel,
+        EthereumTransaction,
+        MumbaiBlock,
+        MumbaiLabel,
+        MumbaiTransaction,
+        PolygonBlock,
+        PolygonLabel,
+        PolygonTransaction,
+        XDaiBlock,
+        XDaiLabel,
+        XDaiTransaction,
+    )
+except ImportError:
+    print("this feature requires moonstreamdb which is not installed")
+    print("to enable, run: `pip install moonworm[moonstream]`")
+    raise ImportError(
+        "moonstreamdb not installed, to install, run: `pip install moonworm[moonstream]`"
+    )
 
 
-class Network(Enum):
-    ethereum = "ethereum"
-    polygon = "polygon"
-    xdai = "xdai"
-
+from .utils import Network
 
 MODELS: Dict[Network, Dict[str, Base]] = {
     Network.ethereum: {
         "blocks": EthereumBlock,
         "labels": EthereumLabel,
         "transactions": EthereumTransaction,
+    },
+    Network.mumbai: {
+        "blocks": MumbaiBlock,
+        "labels": MumbaiLabel,
+        "transactions": MumbaiTransaction,
     },
     Network.polygon: {
         "blocks": PolygonBlock,

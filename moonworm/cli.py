@@ -12,7 +12,7 @@ from moonworm.crawler.ethereum_state_provider import Web3StateProvider
 from moonworm.watch import watch_contract
 
 from .contracts import CU, ERC20, ERC721, CULands
-from .crawler.networks import Network
+from .crawler.utils import Network
 from .deployment import find_deployment_block
 from .generators.basic import (
     generate_contract_cli_content,
@@ -23,11 +23,17 @@ from .version import MOONWORM_VERSION
 
 
 def write_file(content: str, path: str):
+    """
+    Write content to filesystem at the specified path.
+    """
     with open(path, "w") as ofp:
         ofp.write(content)
 
 
 def copy_web3_util(dest_dir: str, force: bool = False) -> None:
+    """
+    Copy the web3_util.py file to the given destination directory.
+    """
     dest_filepath = os.path.join(dest_dir, "web3_util.py")
     if os.path.isfile(dest_filepath) and not force:
         print(f"{dest_filepath} file already exists. Use -f to rewrite")
@@ -36,6 +42,9 @@ def copy_web3_util(dest_dir: str, force: bool = False) -> None:
 
 
 def create_init_py(dest_dir: str, force: bool = False) -> None:
+    """
+    Create __init__.py file in destination directory.
+    """
     dest_filepath = os.path.join(dest_dir, "__init__.py")
     if os.path.isfile(dest_filepath) and not force:
         print(f"{dest_filepath} file already exists. Use -f to rewrite")
@@ -44,6 +53,10 @@ def create_init_py(dest_dir: str, force: bool = False) -> None:
 
 
 def handle_generate(args: argparse.Namespace) -> None:
+    """
+    Handler for the "moonworm generate" command, which generates web3.py-compatible interfaces to a
+    given smart contract.
+    """
     if not args.interface and not args.cli:
         print("Please specify what you want to generate:")
         print("--interface for smart contract interface")
@@ -85,7 +98,10 @@ def handle_generate(args: argparse.Namespace) -> None:
 
 
 def handle_brownie_generate(args: argparse.Namespace):
-
+    """
+    Handler for the "moonworm generate-brownie" command, which generates brownie-compatible interfaces
+    to a given smart contract.
+    """
     Path(args.outdir).mkdir(exist_ok=True)
 
     project_directory = args.project
@@ -100,12 +116,28 @@ def handle_brownie_generate(args: argparse.Namespace):
     with open(build_file_path, "r") as ifp:
         build = json.load(ifp)
 
+    relpath = os.path.relpath(project_directory, args.outdir)
+    splitted_relpath = [
+        f'"{item}"' for item in relpath.split(os.sep)
+    ]  # os.sep => '/' for unix '\' for windows subsystems
+    splitted_relpath_string = ",".join(splitted_relpath)
+
     abi = build["abi"]
-    interface = generate_brownie_interface(abi, args.name)
+    interface = generate_brownie_interface(
+        abi,
+        build,
+        args.name,
+        splitted_relpath_string,
+        prod=args.prod,
+    )
     write_file(interface, os.path.join(args.outdir, args.name + ".py"))
 
 
 def handle_watch(args: argparse.Namespace) -> None:
+    """
+    Handler for the "moonworm watch" command, which records all events and transactions against a given
+    smart contract between the specified block range.
+    """
     if args.abi == "erc20":
         contract_abi = ERC20.abi()
     elif args.abi == "erc721":
@@ -123,11 +155,11 @@ def handle_watch(args: argparse.Namespace) -> None:
         if args.network is None:
             raise ValueError("Please specify --network")
         network = Network.__members__[args.network]
-        from moonstreamdb.db import yield_db_session_ctx
 
         from .crawler.moonstream_ethereum_state_provider import (
             MoonstreamEthereumStateProvider,
         )
+        from .crawler.networks import yield_db_session_ctx
 
         state_provider = MoonstreamEthereumStateProvider(web3, network)
 
@@ -165,35 +197,11 @@ def handle_watch(args: argparse.Namespace) -> None:
         )
 
 
-def handle_watch_cu(args: argparse.Namespace) -> None:
-    from moonworm.cu_watch import watch_cu_contract
-
-    MOONSTREAM_DB_URI = os.environ.get("MOONSTREAM_DB_URI")
-    if not MOONSTREAM_DB_URI:
-        print("Please set MOONSTREAM_DB_URI environment variable")
-        return
-
-    if args.abi is not None:
-        with open(args.abi, "r") as ifp:
-            contract_abi = json.load(ifp)
-    else:
-        print("Using CUContract abi since no abi is specified")
-        contract_abi = CU.abi()
-
-    web3 = Web3(Web3.HTTPProvider(args.web3))
-    web3.middleware_onion.inject(geth_poa_middleware, layer=0)
-
-    watch_cu_contract(
-        web3,
-        web3.toChecksumAddress(args.contract),
-        contract_abi,
-        args.confirmations,
-        start_block=args.deployment_block,
-        force_start=args.force,
-    )
-
-
 def handle_find_deployment(args: argparse.Namespace) -> None:
+    """
+    Handler for the "moonworm find-deployment" command, which finds the deployment block for a given
+    smart contract.
+    """
     web3_client = Web3(Web3.HTTPProvider(args.web3))
     result = find_deployment_block(web3_client, args.contract, args.interval)
     if result is None:
@@ -204,6 +212,9 @@ def handle_find_deployment(args: argparse.Namespace) -> None:
 
 
 def generate_argument_parser() -> argparse.ArgumentParser:
+    """
+    Generates the command-line argument parser for the "moonworm" command.
+    """
     parser = argparse.ArgumentParser(description="Moonworm: Manage your smart contract")
     parser.add_argument(
         "-v",
@@ -315,51 +326,6 @@ def generate_argument_parser() -> argparse.ArgumentParser:
 
     watch_parser.set_defaults(func=handle_watch)
 
-    watch_cu_parser = subcommands.add_parser(
-        "watch-cu", help="Watch a Crypto Unicorns contract"
-    )
-    watch_cu_parser.add_argument(
-        "-i",
-        "--abi",
-        default=None,
-        help="ABI file path, default is abi in  fixtures/abis/CU.json",
-    )
-    watch_cu_parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="Force start from given block",
-    )
-    watch_cu_parser.add_argument(
-        "-c",
-        "--contract",
-        required=True,
-        help="Contract address",
-    )
-
-    watch_cu_parser.add_argument(
-        "-w",
-        "--web3",
-        required=True,
-        help="Web3 provider",
-    )
-
-    watch_cu_parser.add_argument(
-        "--confirmations",
-        default=10,
-        type=int,
-        help="Number of confirmations to wait for. Default=12",
-    )
-
-    watch_cu_parser.add_argument(
-        "--deployment-block",
-        "-d",
-        type=int,
-        help="Block number of the deployment",
-    )
-
-    watch_cu_parser.set_defaults(func=handle_watch_cu)
-
     generate_brownie_parser = subcommands.add_parser(
         "generate-brownie", description="Moonworm code generator for brownie projects"
     )
@@ -380,6 +346,11 @@ def generate_argument_parser() -> argparse.ArgumentParser:
         "--project",
         required=True,
         help=f"Path to brownie project directory",
+    )
+    generate_brownie_parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Generate shippable python interface, in which abi and bytecode will be included inside the generated file",
     )
     generate_brownie_parser.set_defaults(func=handle_brownie_generate)
 
@@ -466,6 +437,9 @@ def generate_argument_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """
+    Handler for the "moonworm" command.
+    """
     parser = generate_argument_parser()
     args = parser.parse_args()
     args.func(args)
